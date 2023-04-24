@@ -1,0 +1,14 @@
+{
+  "name": "login",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "build": "tsc index.ts",
+    "zip": "zip -r function.zip . -x *.ts *.json",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [],
+  "author": "calmdowngirl",
+  "license": "ISC"
+}
