@@ -1,0 +1,23 @@
+{
+  "name": "service-code",
+  "version": "1.0.0",
+  "description": "create a user",
+  "main": "index.js",
+  "scripts": {
+    "build": "tsc index.ts",
+    "zip": "zip -r function.zip . -x *.ts *.json",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "author": "calmdowngirl",
+  "license": "ISC",
+  "devDependencies": {
+    "@types/aws-lambda": "^8.10.114",
+    "@types/bcrypt": "^5.0.0",
+    "@types/node": "^18.16.0",
+    "typescript": "^5.0.4"
+  },
+  "dependencies": {
+    "bcryptjs": "^2.4.3",
+    "jsonwebtoken": "^9.0.0"
+  }
+}
