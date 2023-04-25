@@ -112,6 +112,7 @@ function toReturn(code: number, body?: string) {
     case 200:
       if (body) body = JSON.parse(body)
       else body = JSON.stringify('Ok')
+      break
     default:
       body = body || JSON.stringify('hello')
   }

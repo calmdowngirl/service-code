@@ -11,27 +11,15 @@ interface TokenPayload {
 
 const region = 'ap-southeast-2'
 const dynamo = new DynamoDB({ region })
-const allowedRoles = ['su', 'admin']
-const allowedInputRoles = ['admin', 'consumer']
 
 export const handler = async (event: APIGatewayProxyEvent) => {
-  if (
-    event.httpMethod !== 'PUT' ||
-    event.path !== '/create-user' ||
-    !event.body
-  )
+  if (event.httpMethod !== 'GET' || event.path !== '/refresh')
     return toReturn(400)
 
   try {
-    const input = JSON.parse(event.body)
-
-    /// todo
-    //- [] data validation check
-
-    const secret = readFileSync('./secret', 'utf-8')
-
     const token = event.headers?.['token']
     console.log(`### ${token}`)
+    const secret = readFileSync('./secret', 'utf-8')
     if (!token || !secret) return toReturn(403)
 
     let decodedToken
@@ -41,7 +29,7 @@ export const handler = async (event: APIGatewayProxyEvent) => {
     } catch (e) {
       console.log(e)
       if (e instanceof jwt.TokenExpiredError)
-        return toReturn(403, 'Session Expired')
+        return toReturn(403, 'Refresh Token Expired')
       if (e instanceof jwt.JsonWebTokenError) return toReturn(403)
     }
 
@@ -55,33 +43,31 @@ export const handler = async (event: APIGatewayProxyEvent) => {
     const item = await dynamoGetItemPromise(params)
     console.log(item)
 
-    if (item.access_token.S !== (decodedToken as TokenPayload).token)
-      return toReturn(403)
-    if (input.role === 'su') return toReturn(403)
-    if (item.role.S === input.role || item.role.S === 'consumer')
-      return toReturn(403)
-    if (item.role.S === 'admin' && input.role !== 'consumer')
-      return toReturn(403)
+    const payload1: TokenPayload = {
+      email: item.email.S,
+      token: await bcrypt.genSalt(1),
+    }
+    const payload2: TokenPayload = {
+      email: item.email.S,
+      token: await bcrypt.genSalt(1),
+    }
+    const accessToken = jwt.sign(payload1, secret, { expiresIn: '15' })
+    const refreshToken = jwt.sign(payload2, secret, { expiresIn: '3h' })
 
-    const password = input.password
-    const salt = await bcrypt.genSalt(1)
-    const hashedPwd = await bcrypt.hash(password, salt)
-
-    await dynamo.putItem({
+    await dynamo.updateItem({
       TableName: 'user',
-      Item: {
-        name: { S: input.name },
-        email: { S: input.email },
-        sort_key: { S: input.email },
-        password: { S: hashedPwd },
-        salt: { S: salt },
-        role: { S: input.role },
-        created_at: { N: Date.now().toString() },
-        exp_at: { N: '-1' },
+      Key: {
+        email: { S: item.email.S },
+        sort_key: { S: item.email.S },
+      },
+      UpdateExpression: 'set access_token = :val1, refresh_token = :val2',
+      ExpressionAttributeValues: {
+        ':val1': { S: payload1.token },
+        ':val2': { S: payload2.token },
       },
     })
 
-    return toReturn(200)
+    return toReturn(200, JSON.stringify({ accessToken, refreshToken }))
   } catch (e) {
     console.log(e)
     return toReturn(500)
@@ -130,8 +116,4 @@ function toReturn(code: number, body?: string) {
   }
 
   return response
-}
-
-function revokeAccess() {
-  /// todo
 }
