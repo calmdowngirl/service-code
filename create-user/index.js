@@ -36,64 +36,136 @@ var __generator = (this && this.__generator) || function (thisArg, body) {
     }
 };
 Object.defineProperty(exports, "__esModule", { value: true });
+exports.handler = void 0;
 var client_dynamodb_1 = require("@aws-sdk/client-dynamodb");
 var bcrypt = require("bcryptjs");
-var region = "ap-southeast-2";
+var jwt = require("jsonwebtoken");
+var fs_1 = require("fs");
+var region = 'ap-southeast-2';
 var dynamo = new client_dynamodb_1.DynamoDB({ region: region });
-exports.handler = function (event) { return __awaiter(void 0, void 0, void 0, function () {
-    var response, input, password, salt, hashedPwd, e_1;
+var handler = function (event) { return __awaiter(void 0, void 0, void 0, function () {
+    var input, secret, token, decodedToken, params, item, password, salt, hashedPwd, e_1;
     var _a;
     return __generator(this, function (_b) {
         switch (_b.label) {
             case 0:
-                response = {
-                    statusCode: 200,
-                    body: JSON.stringify("Hello from Lambda!"),
-                    headers: {
-                        "Content-Type": "application/json",
-                    },
-                };
+                if (event.httpMethod !== 'PUT' ||
+                    event.path !== '/create-user' ||
+                    !event.body)
+                    return [2 /*return*/, toReturn(400)];
                 _b.label = 1;
             case 1:
-                _b.trys.push([1, 7, , 8]);
-                if (!(event.httpMethod === "PUT" && event.path === "/create-user")) return [3 /*break*/, 5];
-                input = JSON.parse((_a = event.body) !== null && _a !== void 0 ? _a : "{}");
+                _b.trys.push([1, 6, , 7]);
+                input = JSON.parse(event.body);
+                secret = (0, fs_1.readFileSync)('./secret', 'utf-8');
+                token = (_a = event.headers) === null || _a === void 0 ? void 0 : _a['token'];
+                console.log("### ".concat(token));
+                if (!token || !secret)
+                    return [2 /*return*/, toReturn(403)];
+                decodedToken = void 0;
+                try {
+                    decodedToken = jwt.verify(token, secret);
+                    console.log(decodedToken);
+                }
+                catch (e) {
+                    console.log(e);
+                    if (e instanceof jwt.TokenExpiredError)
+                        return [2 /*return*/, toReturn(403, 'Session Expired')];
+                    if (e instanceof jwt.JsonWebTokenError)
+                        return [2 /*return*/, toReturn(403)];
+                }
+                params = {
+                    TableName: 'user',
+                    Key: {
+                        email: { S: decodedToken.email },
+                        sort_key: { S: decodedToken.email },
+                    },
+                };
+                return [4 /*yield*/, dynamoGetItemPromise(params)];
+            case 2:
+                item = _b.sent();
+                console.log(item);
+                /// todo
+                //- [done] check access token is the same
+                //- [done] check if user role is sufficient for the request
+                if (item.access_token.S !== decodedToken.token)
+                    return [2 /*return*/, toReturn(403)];
+                if (input.role === 'su')
+                    return [2 /*return*/, toReturn(403)];
+                if (item.role.S === input.role || item.role.S === 'consumer')
+                    return [2 /*return*/, toReturn(403)];
+                if (item.role.S === 'admin' && input.role !== 'consumer')
+                    return [2 /*return*/, toReturn(403)];
                 password = input.password;
                 return [4 /*yield*/, bcrypt.genSalt(5)];
-            case 2:
+            case 3:
                 salt = _b.sent();
                 return [4 /*yield*/, bcrypt.hash(password, salt)];
-            case 3:
+            case 4:
                 hashedPwd = _b.sent();
-                console.log(salt, hashedPwd);
                 return [4 /*yield*/, dynamo.putItem({
-                        TableName: "user",
+                        TableName: 'user',
                         Item: {
                             name: { S: input.name },
                             email: { S: input.email },
+                            sort_key: { S: input.email },
                             password: { S: hashedPwd },
                             salt: { S: salt },
                             role: { S: input.role },
                             created_at: { N: Date.now().toString() },
-                            exp_at: { N: "-1" },
+                            exp_at: { N: '-1' },
                         },
                     })];
-            case 4:
-                _b.sent();
-                response.body = JSON.stringify("Ok");
-                return [3 /*break*/, 6];
             case 5:
-                (response.statusCode = 400),
-                    (response.body = JSON.stringify("Bad Request"));
-                _b.label = 6;
-            case 6: return [3 /*break*/, 8];
-            case 7:
+                _b.sent();
+                return [2 /*return*/, toReturn(200)];
+            case 6:
                 e_1 = _b.sent();
                 console.log(e_1);
-                (response.statusCode = 500),
-                    (response.body = JSON.stringify("Server Error"));
-                return [3 /*break*/, 8];
-            case 8: return [2 /*return*/, response];
+                return [2 /*return*/, toReturn(500)];
+            case 7: return [2 /*return*/];
         }
     });
 }); };
+exports.handler = handler;
+function dynamoGetItemPromise(params) {
+    return new Promise(function (resolve, reject) {
+        dynamo.getItem(params, function (err, data) {
+            if (err)
+                reject(err);
+            else
+                resolve(data.Item);
+        });
+    });
+}
+function toReturn(code, body) {
+    if (body)
+        body = JSON.stringify(body);
+    var contentType = body && code === 200 ? 'application/json' : 'text/plain';
+    switch (code) {
+        case 400:
+            body = JSON.stringify('Bad Request');
+            break;
+        case 403:
+            body = body || JSON.stringify('Forbidden');
+            break;
+        case 500:
+            body = body || JSON.stringify('Server Error');
+            break;
+        case 200:
+            if (body)
+                body = JSON.parse(body);
+            else
+                body = JSON.stringify('Ok');
+        default:
+            body = body || JSON.stringify('hello');
+    }
+    var response = {
+        headers: {
+            'Content-Type': contentType,
+        },
+        statusCode: code,
+        body: body,
+    };
+    return response;
+}

@@ -58,7 +58,7 @@ var handler = function (event) { return __awaiter(void 0, void 0, void 0, functi
         switch (_c.label) {
             case 0:
                 if (event.httpMethod !== 'POST' || event.path !== '/login' || !event.body)
-                    toReturn(400);
+                    return [2 /*return*/, toReturn(400)];
                 _c.label = 1;
             case 1:
                 _c.trys.push([1, 7, , 8]);

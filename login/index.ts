@@ -25,10 +25,14 @@ const dynamo = new DynamoDB({ region })
 
 export const handler = async (event: APIGatewayProxyEvent) => {
   if (event.httpMethod !== 'POST' || event.path !== '/login' || !event.body)
-    toReturn(400)
+    return toReturn(400)
 
   try {
     const query = querystring.parse(event.body!!)
+
+    // todo
+    //- [] data validation check
+
     const id = query.id || false
     const pwd = query.password || false
 
@@ -100,7 +104,7 @@ function toReturn(code: number, body?: string) {
       body = JSON.stringify('Bad Request')
       break
     case 403:
-      body = body || JSON.stringify('Unauthorised')
+      body = body || JSON.stringify('Forbidden')
       break
     case 500:
       body = body || JSON.stringify('Server Error')
