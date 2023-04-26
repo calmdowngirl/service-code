@@ -2,6 +2,7 @@
 
 secret
 *.zip
+*.js
 
 # compiled output
 /dist
