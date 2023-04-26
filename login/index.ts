@@ -12,6 +12,7 @@ import * as bcrypt from 'bcryptjs'
 import * as jwt from 'jsonwebtoken'
 import { readFileSync } from 'fs'
 import * as querystring from 'querystring'
+import { region, dynamo, dynamoGetItemPromise, toReturn } from './shared'
 
 interface TokenPayload {
   email: string
@@ -61,7 +62,7 @@ export const handler = async (event: APIGatewayProxyEvent) => {
       email: item.email.S,
       token: await bcrypt.genSalt(1),
     }
-    const accessToken = jwt.sign(payload1, secret, { expiresIn: '15' })
+    const accessToken = jwt.sign(payload1, secret, { expiresIn: 60 * 15 })
     const refreshToken = jwt.sign(payload2, secret, { expiresIn: '3h' })
 
     await dynamo.updateItem({
@@ -82,48 +83,4 @@ export const handler = async (event: APIGatewayProxyEvent) => {
     console.log(e)
     return toReturn(500)
   }
-}
-
-function dynamoGetItemPromise(
-  params: DynamoDB.GetItemInput
-): Promise<DynamoDB.AttributeMap> {
-  return new Promise((resolve, reject) => {
-    dynamo.getItem(params, (err: any, data: any) => {
-      if (err) reject(err)
-      else resolve(data.Item)
-    })
-  })
-}
-
-function toReturn(code: number, body?: string) {
-  if (body) body = JSON.stringify(body)
-  const contentType = body && code === 200 ? 'application/json' : 'text/plain'
-
-  switch (code) {
-    case 400:
-      body = JSON.stringify('Bad Request')
-      break
-    case 403:
-      body = body || JSON.stringify('Forbidden')
-      break
-    case 500:
-      body = body || JSON.stringify('Server Error')
-      break
-    case 200:
-      if (body) body = JSON.parse(body)
-      else body = JSON.stringify('Ok')
-      break
-    default:
-      body = body || JSON.stringify('hello')
-  }
-
-  const response = {
-    headers: {
-      'Content-Type': contentType,
-    },
-    statusCode: code,
-    body,
-  }
-
-  return response
 }

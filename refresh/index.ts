@@ -3,7 +3,7 @@ import { DynamoDB, GetItemInput } from '@aws-sdk/client-dynamodb'
 import * as bcrypt from 'bcryptjs'
 import * as jwt from 'jsonwebtoken'
 import { readFileSync } from 'fs'
-import { region, dynamo, dynamoGetItemPromise, toReturn } from '../shared'
+import { region, dynamo, dynamoGetItemPromise, toReturn } from './shared'
 
 interface TokenPayload {
   email: string
@@ -17,7 +17,7 @@ export const handler = async (event: APIGatewayProxyEvent) => {
   try {
     const token = event.headers?.['token']
     console.log(`### ${token}`)
-    const secret = readFileSync('../shared/secret', 'utf-8')
+    const secret = readFileSync('./shared/secret', 'utf-8')
     if (!token || !secret) return toReturn(403)
 
     let decodedToken
@@ -41,6 +41,9 @@ export const handler = async (event: APIGatewayProxyEvent) => {
     const item = await dynamoGetItemPromise(params)
     console.log(item)
 
+    if (item.refresh_token.S !== (decodedToken as TokenPayload).token)
+      return toReturn(403)
+
     const payload1: TokenPayload = {
       email: item.email.S,
       token: await bcrypt.genSalt(1),
@@ -49,7 +52,7 @@ export const handler = async (event: APIGatewayProxyEvent) => {
       email: item.email.S,
       token: await bcrypt.genSalt(1),
     }
-    const accessToken = jwt.sign(payload1, secret, { expiresIn: '15' })
+    const accessToken = jwt.sign(payload1, secret, { expiresIn: 60 * 15 })
     const refreshToken = jwt.sign(payload2, secret, { expiresIn: '3h' })
 
     await dynamo.updateItem({
