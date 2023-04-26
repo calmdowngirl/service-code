@@ -3,6 +3,7 @@
 secret
 *.zip
 *.js
+package-lock.json
 
 # compiled output
 /dist
