@@ -52,7 +52,7 @@ export const handler = async (event: APIGatewayProxyEvent) => {
     const hashedPwd = await bcrypt.hash(pwd as string, item.salt.S)
     if (item.password.S !== hashedPwd) return toReturn(403)
 
-    const secret = readFileSync('./secret', 'utf-8')
+    const secret = readFileSync('./shared/secret', 'utf-8')
 
     const payload1: TokenPayload = {
       email: item.email.S,
