@@ -4,13 +4,13 @@ export const toReturn = (code: number, body?: string) => {
 
   switch (code) {
     case 400:
-      body = JSON.stringify('Bad Request')
+      body = body || JSON.stringify('Bad Request')
       break
     case 403:
       body = body || JSON.stringify('Forbidden')
       break
     case 500:
-      body = body || JSON.stringify('Server Error')
+      body = body || JSON.stringify('Error')
       break
     case 200:
       if (body) body = JSON.parse(body)

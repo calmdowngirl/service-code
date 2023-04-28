@@ -3,7 +3,13 @@ import { DynamoDB, GetItemInput } from '@aws-sdk/client-dynamodb'
 import * as bcrypt from 'bcryptjs'
 import * as jwt from 'jsonwebtoken'
 import { readFileSync } from 'fs'
-import { region, dynamo, dynamoGetItemPromise, toReturn } from './shared'
+import {
+  region,
+  dynamo,
+  dynamoGetItemPromise,
+  toReturn,
+  PATTERNS,
+} from './shared'
 
 interface TokenPayload {
   email: string
@@ -14,18 +20,6 @@ const region = 'ap-southeast-2'
 const dynamo = new DynamoDB({ region })
 const allowedRoles = ['su', 'admin']
 const allowedInputRoles = ['admin', 'consumer']
-const PATTERNS = {
-  nameAllowSpaceAndDash: /^[\w]+([\s-]?\w)+$/,
-  nameNoSpaceOrDash: /^[\w]*$/,
-  digits: /^\d*$/,
-  rationalNumber: /^[+-]?(\d+[.])?\d+$/,
-  phone: /^[+]?\d{3,15}$/,
-  noExecutable: /^[^`'"<>]+$/,
-  email:
-    // eslint-disable-next-line no-useless-escape
-    /^(([^<>()\[\]\\.,;:\s@"]+(\.[^<>()\[\]\\.,;:\s@"]+)*)|(".+"))@((\[[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\])|(([a-zA-Z\-0-9]+\.)+[a-zA-Z]{2,}))$/,
-  resetCode: /[a-zA-Z0-9]{6}/,
-}
 
 export const handler = async (event: APIGatewayProxyEvent) => {
   if (
@@ -36,18 +30,27 @@ export const handler = async (event: APIGatewayProxyEvent) => {
     return toReturn(400)
 
   try {
-    // const input = JSON.parse(event.body)
-    const { email, role, name, password, phone, exp_at } = JSON.parse(
-      event.body
-    )
+    console.log(`### payload ${event.body}`)
+    var { email, role, name, password, phone, exp_at } = JSON.parse(event.body)
+  } catch (e) {
+    return toReturn(400, 'Invalid JSON')
+  }
 
-    /// todo
-    //- [] data validation check
-    if (!allowedInputRoles.includes(role) || !PATTERNS.email.test(email))
-      return toReturn(403)
-    if (name && !PATTERNS.nameAllowSpaceAndDash.test(name)) return toReturn(403)
-    if (phone && !PATTERNS.phone.test(phone)) return toReturn(403)
-    // if (exp_at)
+  try {
+    if (allowedInputRoles.indexOf(role) === -1)
+      return toReturn(400, 'Invalid role')
+    if (!PATTERNS.email.test(email)) return toReturn(400, 'Invalid email')
+    if (name && !PATTERNS.nameAllowSpaceAndDash.test(name))
+      return toReturn(400, 'Invalid name')
+    if (phone && !PATTERNS.phone.test(phone))
+      return toReturn(400, 'Invalid phone')
+    if (
+      exp_at &&
+      exp_at != '-1' &&
+      !PATTERNS.digits.test(exp_at) &&
+      Date.now() - exp_at <= 3600 * 1000
+    )
+      return toReturn(400, 'Invalid exp_at')
 
     const secret = readFileSync('./shared/secret', 'utf-8')
 
@@ -87,6 +90,7 @@ export const handler = async (event: APIGatewayProxyEvent) => {
     putItem.Item.sort_key = { S: email }
     putItem.Item.role = { S: role }
     putItem.Item.created_at = { N: Date.now().toString() }
+    putItem.Item.exp_at = { N: exp_at?.toString() ?? '-1' }
     if (name) putItem.Item.name = { S: name }
     if (password) {
       const salt = await bcrypt.genSalt(1)
@@ -94,10 +98,7 @@ export const handler = async (event: APIGatewayProxyEvent) => {
       putItem.Item.password = { S: hashedPwd }
       putItem.Item.salt = { S: salt }
     }
-    if (exp_at) putItem.Item.name = { N: exp_at }
-
     await dynamo.putItem(putItem)
-
     return toReturn(200)
   } catch (e) {
     console.log(e)
