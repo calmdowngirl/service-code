@@ -1,0 +1,11 @@
+{
+  "name": "service-code",
+  "version": "1.0.0",
+  "description": "create a user",
+  "main": "index.js",
+  "scripts": {
+    "build": "tsc index.ts"
+  },
+  "author": "calmdowngirl",
+  "license": "ISC"
+}

@@ -4,7 +4,7 @@
   "description": "login",
   "main": "index.js",
   "scripts": {
-    "clean": "rm -rf index.js function.zip node_modules",
+    "clean": "rm -rf index.js dist",
     "build": "tsc index.ts",
     "stage": "npm run clean && npm i --omit=dev && npm run build",
     "zip": "mkdir dist && cp -r node_modules index.js ../shared dist/ && cd dist && zip -r function.zip . -x *.ts .* && cd ..",

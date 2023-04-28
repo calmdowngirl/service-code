@@ -52,8 +52,8 @@ export const handler = async (event: APIGatewayProxyEvent) => {
       email: item.email.S,
       token: await bcrypt.genSalt(1),
     }
-    const accessToken = jwt.sign(payload1, secret, { expiresIn: 60 * 15 })
-    const refreshToken = jwt.sign(payload2, secret, { expiresIn: '3h' })
+    const accessToken = jwt.sign(payload1, secret, { expiresIn: 60 * 120 })
+    const refreshToken = jwt.sign(payload2, secret, { expiresIn: '8h' })
 
     await dynamo.updateItem({
       TableName: 'user',
