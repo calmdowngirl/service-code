@@ -1,18 +1,9 @@
-/**
- * doc
- *
- * [access token]
- * allow user to access api, lifespan default to 15 mins
- *
- */
-
-import { APIGatewayProxyEvent } from 'aws-lambda'
-import { DynamoDB } from '@aws-sdk/client-dynamodb'
+import { APIGatewayProxyEventV2 } from 'aws-lambda'
 import * as bcrypt from 'bcryptjs'
 import * as jwt from 'jsonwebtoken'
+// import * as querystring from 'querystring'
 import { readFileSync } from 'fs'
-import * as querystring from 'querystring'
-import { region, dynamo, dynamoGetItemPromise, toReturn } from './shared'
+import { dynamo, dynamoQueryPromise, toReturn, PATTERNS } from './shared'
 
 interface TokenPayload {
   email: string
@@ -21,39 +12,52 @@ interface TokenPayload {
   // exp: number
 }
 
-const region = 'ap-southeast-2'
-const dynamo = new DynamoDB({ region })
-
-export const handler = async (event: APIGatewayProxyEvent) => {
-  if (event.httpMethod !== 'POST' || event.path !== '/login' || !event.body)
+export const handler = async (event: APIGatewayProxyEventV2) => {
+  console.log(event)
+  if (
+    event.requestContext.http.method !== 'POST' ||
+    event.headers['content-type'] !== 'application/x-www-form-urlencoded' ||
+    !event.body
+  )
     return toReturn(400)
 
   try {
-    const query = querystring.parse(event.body!!)
+    // var { id, password } = querystring.parse(atob(event.body))
+    const formData = atob(event.body)
+      .split('&')
+      .reduce((acc, pair) => {
+        const [key, value] = pair.split('=')
+        acc[key] = decodeURIComponent(value)
+        return acc
+      }, {} as any)
+    console.log(`### ${JSON.stringify(formData)}`)
+    var { id, password } = formData
+  } catch (e) {
+    return toReturn(400)
+  }
 
-    // todo
-    //- [] data validation check
-
-    const id = query.id || false
-    const pwd = query.password || false
-
-    if (!id || !pwd) return toReturn(400)
+  try {
+    if (!id || !PATTERNS.email.test(id) || !password) return toReturn(400)
 
     const params = {
       TableName: 'user',
-      Key: {
-        email: { S: id },
-        sort_key: { S: id },
+      KeyConditionExpression: 'email = :email',
+      ExpressionAttributeValues: {
+        ':email': { S: id },
       },
     }
-    const item = await dynamoGetItemPromise(params)
+    const item = (await dynamoQueryPromise(params))?.[0]
     console.log(item)
+    if (!item) return toReturn(403, 'Invalid Account or Password')
 
-    const hashedPwd = await bcrypt.hash(pwd as string, item.salt.S)
+    const exp = parseInt(item.exp_at.N)
+    if (exp !== -1 && exp - Date.now() <= 0)
+      return toReturn(403, 'Account Expired')
+
+    const hashedPwd = await bcrypt.hash(password as string, item.salt.S)
     if (item.password.S !== hashedPwd) return toReturn(403)
 
     const secret = readFileSync('./shared/secret', 'utf-8')
-
     const payload1: TokenPayload = {
       email: item.email.S,
       token: await bcrypt.genSalt(1),
@@ -62,14 +66,14 @@ export const handler = async (event: APIGatewayProxyEvent) => {
       email: item.email.S,
       token: await bcrypt.genSalt(1),
     }
-    const accessToken = jwt.sign(payload1, secret, { expiresIn: 60 * 120 })
+    const accessToken = jwt.sign(payload1, secret, { expiresIn: 60 * 120 }) // 2h
     const refreshToken = jwt.sign(payload2, secret, { expiresIn: '8h' })
 
     await dynamo.updateItem({
       TableName: 'user',
       Key: {
         email: { S: item.email.S },
-        sort_key: { S: item.email.S },
+        created_by: { S: item.created_by.S },
       },
       UpdateExpression: 'set access_token = :val1, refresh_token = :val2',
       ExpressionAttributeValues: {
@@ -78,7 +82,10 @@ export const handler = async (event: APIGatewayProxyEvent) => {
       },
     })
 
-    return toReturn(200, JSON.stringify({ accessToken, refreshToken }))
+    return toReturn(
+      200,
+      JSON.stringify({ accessToken, refreshToken, role: item.role.S })
+    )
   } catch (e) {
     console.log(e)
     return toReturn(500)

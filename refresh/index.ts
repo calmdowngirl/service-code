@@ -1,18 +1,17 @@
-import { APIGatewayProxyEvent } from 'aws-lambda'
+import { APIGatewayProxyEventV2 } from 'aws-lambda'
 import { DynamoDB, GetItemInput } from '@aws-sdk/client-dynamodb'
 import * as bcrypt from 'bcryptjs'
 import * as jwt from 'jsonwebtoken'
 import { readFileSync } from 'fs'
-import { region, dynamo, dynamoGetItemPromise, toReturn } from './shared'
+import { dynamo, dynamoQueryPromise, toReturn } from './shared'
 
 interface TokenPayload {
   email: string
   token: string
 }
 
-export const handler = async (event: APIGatewayProxyEvent) => {
-  if (event.httpMethod !== 'GET' || event.path !== '/refresh')
-    return toReturn(400)
+export const handler = async (event: APIGatewayProxyEventV2) => {
+  if (event.requestContext.http.method !== 'GET') return toReturn(400)
 
   try {
     const token = event.headers?.['token']
@@ -33,13 +32,14 @@ export const handler = async (event: APIGatewayProxyEvent) => {
 
     const params = {
       TableName: 'user',
-      Key: {
-        email: { S: (decodedToken as TokenPayload).email },
-        sort_key: { S: (decodedToken as TokenPayload).email },
+      KeyConditionExpression: 'email = :email',
+      ExpressionAttributeValues: {
+        ':email': { S: (decodedToken as TokenPayload).email },
       },
     }
-    const item = await dynamoGetItemPromise(params)
+    const item = (await dynamoQueryPromise(params))?.[0]
     console.log(item)
+    if (!item) return toReturn(403)
 
     if (item.refresh_token.S !== (decodedToken as TokenPayload).token)
       return toReturn(403)
@@ -59,7 +59,7 @@ export const handler = async (event: APIGatewayProxyEvent) => {
       TableName: 'user',
       Key: {
         email: { S: item.email.S },
-        sort_key: { S: item.email.S },
+        created_by: { S: item.created_by.S },
       },
       UpdateExpression: 'set access_token = :val1, refresh_token = :val2',
       ExpressionAttributeValues: {
@@ -68,7 +68,10 @@ export const handler = async (event: APIGatewayProxyEvent) => {
       },
     })
 
-    return toReturn(200, JSON.stringify({ accessToken, refreshToken }))
+    return toReturn(
+      200,
+      JSON.stringify({ accessToken, refreshToken, role: item.role.S })
+    )
   } catch (e) {
     console.log(e)
     return toReturn(500)

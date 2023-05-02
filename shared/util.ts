@@ -23,10 +23,27 @@ export const toReturn = (code: number, body?: string) => {
   const response = {
     headers: {
       'Content-Type': contentType,
+      'Access-Control-Allow-Headers':
+        'Content-Type,token,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token',
+      // 'Access-Control-Allow-Origin': '*',
+      'Access-Control-Allow-Methods': '*',
+      'X-Requested-With': '*',
     },
     statusCode: code,
     body,
   }
 
   return response
+}
+
+export const randomString = (len: number) => {
+  const randomInt = (max: number) => Math.floor(Math.random() * max)
+  const randomShortStr = () =>
+    Math.random().toString(36).replace('.', '').toUpperCase()
+
+  let s = ''
+  for (let i = 0; i < 10; i++) s += randomShortStr()
+  const rl = s.length
+  const fromIdx = randomInt(rl - 1 - len)
+  return s.substring(fromIdx, fromIdx + len)
 }

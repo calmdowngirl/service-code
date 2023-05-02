@@ -1,45 +1,34 @@
-import { APIGatewayProxyEvent } from 'aws-lambda'
-import { DynamoDB, GetItemInput } from '@aws-sdk/client-dynamodb'
+import { APIGatewayProxyEventV2 } from 'aws-lambda'
+import { ConditionalCheckFailedException } from '@aws-sdk/client-dynamodb'
 import * as bcrypt from 'bcryptjs'
 import * as jwt from 'jsonwebtoken'
 import { readFileSync } from 'fs'
-import {
-  region,
-  dynamo,
-  dynamoGetItemPromise,
-  toReturn,
-  PATTERNS,
-} from './shared'
+import { dynamo, dynamoQueryPromise, toReturn, PATTERNS } from './shared'
 
 interface TokenPayload {
   email: string
   token: string
 }
 
-const region = 'ap-southeast-2'
-const dynamo = new DynamoDB({ region })
-const allowedRoles = ['su', 'admin']
 const allowedInputRoles = ['admin', 'consumer']
 
-export const handler = async (event: APIGatewayProxyEvent) => {
-  if (
-    event.httpMethod !== 'PUT' ||
-    event.path !== '/create-user' ||
-    !event.body
-  )
+export const handler = async (event: APIGatewayProxyEventV2) => {
+  if (event.requestContext.http.method !== 'PUT' || !event.body)
     return toReturn(400)
 
   try {
-    console.log(`### payload ${event.body}`)
+    console.log(event)
     var { email, role, name, password, phone, exp_at } = JSON.parse(event.body)
   } catch (e) {
     return toReturn(400, 'Invalid JSON')
   }
 
   try {
+    // required fields
     if (allowedInputRoles.indexOf(role) === -1)
       return toReturn(400, 'Invalid role')
     if (!PATTERNS.email.test(email)) return toReturn(400, 'Invalid email')
+    // optional fields
     if (name && !PATTERNS.nameAllowSpaceAndDash.test(name))
       return toReturn(400, 'Invalid name')
     if (phone && !PATTERNS.phone.test(phone))
@@ -52,9 +41,8 @@ export const handler = async (event: APIGatewayProxyEvent) => {
     )
       return toReturn(400, 'Invalid exp_at')
 
-    const secret = readFileSync('./shared/secret', 'utf-8')
-
     const token = event.headers?.['token']
+    const secret = readFileSync('./shared/secret', 'utf-8')
     console.log(`### ${token}`)
     if (!token || !secret) return toReturn(403)
 
@@ -71,13 +59,14 @@ export const handler = async (event: APIGatewayProxyEvent) => {
 
     const params = {
       TableName: 'user',
-      Key: {
-        email: { S: (decodedToken as TokenPayload).email },
-        sort_key: { S: (decodedToken as TokenPayload).email },
+      KeyConditionExpression: 'email = :email',
+      ExpressionAttributeValues: {
+        ':email': { S: (decodedToken as TokenPayload).email },
       },
     }
-    const item = await dynamoGetItemPromise(params)
+    const item = (await dynamoQueryPromise(params))?.[0]
     console.log(item)
+    if (!item) return toReturn(403)
 
     if (item.access_token.S !== (decodedToken as TokenPayload).token)
       return toReturn(403)
@@ -85,13 +74,20 @@ export const handler = async (event: APIGatewayProxyEvent) => {
     if (item.role.S === role || item.role.S === 'consumer') return toReturn(403)
     if (item.role.S === 'admin' && role !== 'consumer') return toReturn(403)
 
-    const putItem = { TableName: 'user', Item: {} as any }
+    const putItem = {
+      TableName: 'user',
+      Item: {} as any,
+      ConditionExpression: 'attribute_not_exists(email)',
+    }
     putItem.Item.email = { S: email }
-    putItem.Item.sort_key = { S: email }
+    putItem.Item.created_by = {
+      S: (decodedToken as TokenPayload).email,
+    }
     putItem.Item.role = { S: role }
     putItem.Item.created_at = { N: Date.now().toString() }
     putItem.Item.exp_at = { N: exp_at?.toString() ?? '-1' }
     if (name) putItem.Item.name = { S: name }
+    if (phone) putItem.Item.phone = { S: phone }
     if (password) {
       const salt = await bcrypt.genSalt(1)
       const hashedPwd = await bcrypt.hash(password, salt)
@@ -102,10 +98,8 @@ export const handler = async (event: APIGatewayProxyEvent) => {
     return toReturn(200)
   } catch (e) {
     console.log(e)
+    if (e instanceof ConditionalCheckFailedException)
+      return toReturn(500, 'User Already Exists')
     return toReturn(500)
   }
-}
-
-function revokeAccess() {
-  /// todo
 }
